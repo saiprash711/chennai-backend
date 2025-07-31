@@ -39,6 +39,7 @@ const corsOptions = {
   },
   credentials: true,
   optionsSuccessStatus: 200,
+  // FIX: Explicitly allow the 'X-Requested-With' header sent by the browser
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 };
 
@@ -51,13 +52,6 @@ app.use(cors(corsOptions));
 // ============================================================================
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-
-// FIX: Add a request logger to debug routing issues
-app.use((req, res, next) => {
-  console.log(`[REQUEST LOGGER] Method: ${req.method}, Path: ${req.originalUrl}`);
-  next();
-});
-
 
 // ============================================================================
 // TEST ROUTES
@@ -109,9 +103,7 @@ app.use((err, req, res, next) => {
     res.status(500).json({ error: 'An internal server error occurred.' });
 });
 
-// This is the final 404 handler. If a request gets here, no route matched it.
 app.use((req, res) => {
-    console.log(`[404 HANDLER] Route not found for ${req.method} ${req.originalUrl}`);
     res.status(404).json({ error: 'Endpoint not found', path: req.path });
 });
 
