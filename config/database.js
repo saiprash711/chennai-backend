@@ -1,135 +1,202 @@
-// config/database.js
+// ============================================================================
+// ENHANCED DATABASE CONFIGURATION - PRODUCTION READY v2.2.0 - FIXED FOR RENDER
+// ============================================================================
 const { Pool } = require('pg');
 const mongoose = require('mongoose');
 require('dotenv').config();
+const url = require('url'); // For parsing DATABASE_URL
 
-// UPDATED: Enhanced PostgreSQL connection with better error handling
-const pgPool = new Pool({
-  host: process.env.DB_HOST || 'localhost',
-  port: process.env.DB_PORT || 5432,
-  database: process.env.DB_NAME || 'hansei_dashboard',
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || '',
-  max: 20,
+// ============================================================================
+// POSTGRESQL CONNECTION POOL - NOW HANDLES DATABASE_URL
+// ============================================================================
+let pgConfig = {
+  max: process.env.NODE_ENV === 'production' ? 30 : 10,
+  min: 2,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 20000, // Increased for Render
-  // ADDED: SSL configuration for production databases
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
-});
+  connectionTimeoutMillis: 10000,
+  statement_timeout: 30000,
+  query_timeout: 30000,
+  allowExitOnIdle: false,
+  application_name: 'hansei_backend_v220'
+};
 
-// Test PostgreSQL connection with better error handling
+// Parse DATABASE_URL if present (for Render.com)
+if (process.env.DATABASE_URL) {
+  const params = url.parse(process.env.DATABASE_URL);
+  const auth = params.auth.split(':');
+  
+  pgConfig.user = auth[0];
+  pgConfig.password = auth[1];
+  pgConfig.host = params.hostname;
+  pgConfig.port = params.port;
+  pgConfig.database = params.pathname.split('/')[1];
+  pgConfig.ssl = { rejectUnauthorized: false };
+} else {
+  // Fallback to individual env vars
+  pgConfig.host = process.env.DB_HOST || 'localhost';
+  pgConfig.port = process.env.DB_PORT || 5432;
+  pgConfig.database = process.env.DB_NAME || 'hansei_dashboard';
+  pgConfig.user = process.env.DB_USER || 'postgres';
+  pgConfig.password = process.env.DB_PASSWORD || '';
+  pgConfig.ssl = process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined;
+}
+
+const pgPool = new Pool(pgConfig);
+
+// Connection monitoring
 pgPool.on('connect', (client) => {
-  console.log('✅ Connected to PostgreSQL database');
-  console.log(`📊 Database: ${process.env.DB_NAME || 'hansei_dashboard'}`);
+  console.log('✅ PostgreSQL connected');
+  client.query(`SET work_mem='4MB'; SET random_page_cost=1.1;`)
+    .catch((err) => console.warn('⚠️ PG session settings failed:', err.message));
 });
 
 pgPool.on('error', (err) => {
-  console.error('❌ PostgreSQL connection error:', err.message);
-  // Don't exit process in production, just log the error
-  if (process.env.NODE_ENV !== 'production') {
-    console.error('Full error:', err);
-  }
+  console.error('❌ PostgreSQL pool error:', err.message);
 });
 
-// UPDATED: Enhanced MongoDB connection with better error handling
+// ============================================================================
+// MONGODB SCHEMAS (for chatbot and analytics logging)
+// ============================================================================
+let ChatLog = null;
+let AnalyticsEvent = null;
+
 const connectMongoDB = async () => {
+  if (!process.env.MONGODB_URI) {
+    console.log('ℹ️ MongoDB URI not provided - creating mock schemas');
+    
+    // Create mock schemas that won't crash the application
+    ChatLog = {
+      save: async function() {
+        console.log('Mock ChatLog save called (MongoDB not connected)');
+        return this;
+      }
+    };
+    
+    AnalyticsEvent = function(data) {
+      return {
+        save: async function() {
+          console.log('Mock AnalyticsEvent save called (MongoDB not connected)');
+          return this;
+        }
+      };
+    };
+    
+    return;
+  }
+
   try {
-    if (process.env.MONGODB_URI) {
-      await mongoose.connect(process.env.MONGODB_URI, {
-        useNewUrlParser: true,
-        useUnifiedTopology: true,
-        serverSelectionTimeoutMS: 15000, // 15 seconds
-        socketTimeoutMS: 45000, // 45 seconds
-      });
-      console.log('✅ Connected to MongoDB');
-    } else {
-      console.log('⚠️ No MONGODB_URI provided, skipping MongoDB connection');
-    }
-  } catch (error) {
-    console.log('⚠️ MongoDB connection failed, continuing without analytics logging:', error.message);
-    // Don't throw error, just continue without MongoDB
+    await mongoose.connect(process.env.MONGODB_URI, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+      serverSelectionTimeoutMS: 10000,
+      socketTimeoutMS: 45000,
+      maxPoolSize: 20,
+      minPoolSize: 2,
+      autoIndex: false
+    });
+    
+    console.log('✅ MongoDB connected');
+    
+    // Define schemas after connection
+    const chatLogSchema = new mongoose.Schema({
+      userId: { type: Number, required: true },
+      message: { type: String, required: true },
+      response: { type: String, required: true },
+      sessionId: { type: String, default: '' },
+      timestamp: { type: Date, default: Date.now }
+    });
+
+    const analyticsEventSchema = new mongoose.Schema({
+      eventType: { type: String, required: true },
+      userId: Number,
+      metadata: mongoose.Schema.Types.Mixed,
+      timestamp: { type: Date, default: Date.now }
+    });
+
+    ChatLog = mongoose.model('ChatLog', chatLogSchema);
+    AnalyticsEvent = mongoose.model('AnalyticsEvent', analyticsEventSchema);
+    
+  } catch (err) {
+    console.error('❌ MongoDB connection failed:', err.message);
+    console.warn('⚠️ Creating mock schemas for graceful degradation');
+    
+    // Create mock schemas for graceful degradation
+    ChatLog = function(data) {
+      this.userId = data.userId;
+      this.message = data.message;
+      this.response = data.response;
+      this.sessionId = data.sessionId;
+      this.timestamp = new Date();
+      
+      this.save = async function() {
+        console.log('Mock ChatLog save (MongoDB failed):', this.message.substring(0, 50));
+        return this;
+      };
+      return this;
+    };
+    
+    ChatLog.find = function() {
+      return {
+        sort: function() {
+          return {
+            limit: function() {
+              return Promise.resolve([]);
+            }
+          };
+        }
+      };
+    };
+    
+    AnalyticsEvent = function(data) {
+      this.eventType = data.eventType;
+      this.userId = data.userId;
+      this.timestamp = data.timestamp || new Date();
+      
+      this.save = async function() {
+        console.log('Mock AnalyticsEvent save (MongoDB failed):', this.eventType);
+        return this;
+      };
+      return this;
+    };
   }
 };
 
-// ADDED: Test database connectivity function
+// Health checks
 async function testDatabaseConnections() {
+  // Postgres
   try {
-    // Test PostgreSQL
     const client = await pgPool.connect();
-    const result = await client.query('SELECT NOW() as current_time');
-    console.log('✅ PostgreSQL test query successful:', result.rows[0].current_time);
+    const { rows } = await client.query('SELECT NOW() as now');
+    console.log('⏱️ Postgres time:', rows[0].now);
     client.release();
-    
-    return true;
-  } catch (error) {
-    console.error('❌ Database connectivity test failed:', error.message);
-    throw error;
+  } catch (err) {
+    console.error('❌ PostgreSQL test failed:', err.message);
+    throw err;
   }
 }
 
-// MongoDB schemas (for analytics logging)
-const analyticsEventSchema = new mongoose.Schema({
-  eventType: String,
-  userId: String,
-  timestamp: { type: Date, default: Date.now },
-  metadata: Object
-});
-
-const chatLogSchema = new mongoose.Schema({
-  userId: String,
-  message: String,
-  response: String,
-  sessionId: String,
-  timestamp: { type: Date, default: Date.now }
-});
-
-// UPDATED: Handle model creation with error handling
-let AnalyticsEvent, ChatLog;
-try {
-  AnalyticsEvent = mongoose.model('AnalyticsEvent', analyticsEventSchema);
-  ChatLog = mongoose.model('ChatLog', chatLogSchema);
-} catch (error) {
-  console.warn('⚠️ MongoDB models not available:', error.message);
-  // Create dummy models that don't actually save
-  AnalyticsEvent = {
-    prototype: {
-      save: async () => {
-        console.warn('⚠️ Analytics logging skipped (MongoDB not available)');
-        return Promise.resolve();
-      }
-    }
-  };
-  ChatLog = {
-    find: () => ({ sort: () => ({ limit: () => Promise.resolve([]) }) }),
-    prototype: {
-      save: async () => {
-        console.warn('⚠️ Chat logging skipped (MongoDB not available)');
-        return Promise.resolve();
-      }
-    }
-  };
-}
-
-// Initialize connections
-connectMongoDB().catch(error => {
-  console.warn('MongoDB initialization failed, continuing...', error.message);
-});
-
-// ADDED: Initialize database connections and test them
 async function initializeDatabase() {
-  try {
-    await testDatabaseConnections();
-    console.log('🎉 Database initialization complete!');
-  } catch (error) {
-    console.error('💥 Database initialization failed:', error.message);
-    throw error;
+  await connectMongoDB();
+  await testDatabaseConnections();
+  console.log('🎉 Database init complete');
+}
+
+// Graceful shutdown
+async function shutdownDatabases() {
+  console.log('🔄 Closing database connections');
+  await pgPool.end();
+  if (mongoose.connection.readyState === 1) {
+    await mongoose.connection.close();
   }
 }
+
+process.on('SIGINT', shutdownDatabases);
+process.on('SIGTERM', shutdownDatabases);
 
 module.exports = {
   pgPool,
-  AnalyticsEvent,
   ChatLog,
+  AnalyticsEvent,
   initializeDatabase,
   testDatabaseConnections
 };
