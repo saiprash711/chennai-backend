@@ -47,7 +47,7 @@ app.use(helmet());
 app.use(cors({
   origin: [
     'http://localhost:3000',
-    'https://daikin-n9wy.onrender.com',
+    'https://chennai-frontend.vercel.app',
     /\.vercel\.app$/,
     /\.netlify\.app$/,
     /localhost:\d{4}$/
