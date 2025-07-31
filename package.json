@@ -1,34 +1,39 @@
 {
   "name": "hansei-backend",
-  "version": "1.0.1",
-  "description": "Hansei Sales Intelligence Backend API",
+  "version": "2.0.0",
+  "description": "Hansei Sales Intelligence Backend API - Optimized Performance Edition",
   "main": "app.js",
   "scripts": {
-    "start": "node app.js",
+    "start": "node scripts/create-schema.js && (node scripts/import-excel.js || echo 'Import skipped - running without initial data') && node app.js",
     "dev": "nodemon app.js",
     "build": "echo 'No build step required'",
     "test": "echo 'No tests specified'",
-    "import-data": "node scripts/import-excel.js"
+    "import-data": "node scripts/import-excel.js",
+    "health": "curl http://localhost:3000/api/health",
+    "cache-clear": "curl -X DELETE http://localhost:3000/api/sales/cache"
   },
   "engines": {
     "node": ">=16.0.0",
     "npm": ">=8.0.0"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "cors": "^2.8.5",
-    "helmet": "^6.0.1",
-    "morgan": "^1.10.0",
-    "express-rate-limit": "^6.7.0",
-    "dotenv": "^16.0.3",
     "bcryptjs": "^2.4.3",
-    "jsonwebtoken": "^9.0.0",
-    "pg": "^8.9.0",
-    "mongoose": "^6.9.1",
-    "multer": "^1.4.5-lts.1",
-    "xlsx": "^0.18.5",
+    "compression": "^1.7.4",
+    "cors": "^2.8.5",
     "csv-parser": "^3.0.0",
-    "uuid": "^9.0.0"
+    "dotenv": "^16.0.3",
+    "express": "^4.18.2",
+    "express-rate-limit": "^6.7.0",
+    "express-slow-down": "^1.4.0",
+    "helmet": "^6.0.1",
+    "jsonwebtoken": "^9.0.0",
+    "mongoose": "^6.9.1",
+    "morgan": "^1.10.0",
+    "multer": "^1.4.5-lts.1",
+    "node-cron": "^3.0.0",
+    "pg": "^8.9.0",
+    "uuid": "^9.0.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "nodemon": "^2.0.20"
@@ -37,8 +42,19 @@
     "sales",
     "analytics",
     "dashboard",
-    "api"
+    "api",
+    "performance",
+    "optimization",
+    "caching"
   ],
   "author": "Hansei Consultancy",
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/hansei-backend"
+  },
+  "bugs": {
+    "url": "https://github.com/your-org/hansei-backend/issues"
+  },
+  "homepage": "https://github.com/your-org/hansei-backend#readme"
 }
