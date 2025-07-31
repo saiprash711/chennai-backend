@@ -455,6 +455,7 @@ async function processOptimizedDailyUpdate(data, client, userId, filename) {
             .slice(0, 10)
     };
 
+    // **FIX:** Pass the summary object directly to the query. The 'pg' driver handles JSONB serialization.
     await client.query(`
         INSERT INTO upload_history 
         (user_id, filename, records_processed, records_new, records_updated, records_skipped, 
@@ -522,7 +523,7 @@ router.get('/history', authenticateToken, async (req, res) => {
 
 router.get('/freshness', authenticateToken, async (req, res) => {
     try {
-        // Single optimized query for freshness data
+        // **FIX:** Changed `CURRENT_DATE - MAX(i.record_date)` to `EXTRACT(DAY FROM ...)` to return an integer instead of an interval.
         const query = `
             SELECT 
                 b.name as branch_name,
